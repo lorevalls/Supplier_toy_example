@@ -32,13 +32,19 @@ supplier_data <- supplier_data %>%
     cost_from_origin = delivery_time * runif(num_suppliers, min = 800, max = 1200) + rnorm(num_suppliers, mean = 0, sd = 100)
   )
 
-# mettere anche correlazine tra:
-## num_trasport -> eletric_consu
-## prodct_sold ->  man_famele_ratio
-## numner_emply -> man_famele_ratio
+# add  correlation:
 
-# inserire:
-## fatturato
+supplier_data <- supplier_data %>% 
+mutate(
+  male_female_ratio = 0.5 + (num_employees / 1000) + rnorm(num_suppliers, mean = 0, sd = 0.1)
+
+) 
+
+supplier_data <- supplier_data %>%
+mutate(
+  income= (products_sold * (runif(products_sold, min=10, max=5000)+rnorm(products_sold, 0,100)))- (num_employees * (runif(num_employees, min=8, max=20)+rnorm(num_employees, 0, 10))
+  )
+)
 
 
 # View the first few rows of the dataset
