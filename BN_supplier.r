@@ -8,9 +8,20 @@ workdf$num_employees<-as.numeric(workdf$num_employees)
 workdf$num_transports<-as.numeric(workdf$num_transports)
 workdf$income<-as.numeric(workdf$income)
 
+
+# white list
+
+wl<-data.frame(from = "supplier_name", to = c("income","num_employees","co2_emissions"))
+
+#  blacklist
+bl <- data.frame(from = c("income"), to = c("supplier_name"))
+
 # structure learning
 trainig_set<-workdf[1:200,]
-net<-hc(workdf, score = 'bic-cg')
+net<-hc(workdf, score = 'bic-cg'
+    , whitelist = wl
+    ,blacklist = bl
+)
 plot(net)
 
 # parameter leanrig
@@ -29,9 +40,7 @@ print(bn_new)
 
 # density
 
-plot(density(bn_new)
-    ,xlim=c(0,70000)
-        )
+plot(density(bn_new))
 abline(v=mean(bn_new), col='blue')
 lines(density(trainig_set$income))
 abline(v=mean(trainig_set$income), col='red')
