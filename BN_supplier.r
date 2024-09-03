@@ -33,7 +33,7 @@ print(net_coef)
 
 ## new data observed
 test_set<-workdf[201:300,]
-bn_new<-predict(net_coef,node="income", data= test_set , method="bayes-lw")
+bn_new<-predict(net_coef,node=c("income"), data= test_set , method="bayes-lw")
 
 #predicted values for income
 print(bn_new) 

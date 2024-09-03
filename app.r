@@ -82,12 +82,15 @@ ui <- fluidPage(
   sidebarLayout(
     sidebarPanel(
         selectInput("node", "Select Node of Interest:", choices = names(workdf)),
+        selectInput("multi_nodes", "Select Nodes for Utility Calculation:", choices = names(workdf), multiple = TRUE),
         fileInput("file1", "Upload CSV File for Test Data", accept = ".csv"),
         actionButton("predict_btn", "Show Predictions")
     ),
     mainPanel(
         plotOutput("networkPlot"),
         plotOutput("densityPlot"),
+        plotOutput("utilityPieChart"),
+        textOutput("utility"),
         textOutput("summary")
 
     )
@@ -109,13 +112,15 @@ server <- function(input, output) {
     
 
     # Print the data types for debugging
-    print(str(data))
+   # print(str(data))
     
     return(data)
   })
   
   observeEvent(input$predict_btn, {
+
     node <- input$node
+    multi_nodes <- input$multi_nodes
 
     test_set <- if (!is.null(input$file1)) {
       test_data()
@@ -126,25 +131,82 @@ server <- function(input, output) {
     # Perform prediction for the selected node
     if (node %in% names(workdf)) {
 
-
-      predicted_values <- predict(net_coef, node = node, data = test_set, method = "bayes-lw")
+      predicted_values_plot <- predict(net_coef, node = node, data = test_set, method = "bayes-lw")
       
       output$densityPlot <- renderPlot({
-        plot(density(predicted_values), main = paste("Density Plot for Predicted", node), col = "blue", lwd = 2)
-        abline(v = mean(predicted_values), col = 'blue', lwd = 2, lty = 2)
+        plot(density(predicted_values_plot), main = paste("Density Plot for Predicted", node), col = "blue", lwd = 2)
+        abline(v = mean(predicted_values_plot), col = 'blue', lwd = 2, lty = 2)
         #lines(density(test_set[[node]]), col = 'red', lwd = 2)
         #abline(v = mean(test_set[[node]]), col = 'red', lwd = 2, lty = 2)
         legend("topright", legend = c("Predicted", "Training"), col = c("blue", "red"), lty = 1, lwd = 2)
       })
-      
-
+       
 
       output$summary <- renderText({
         paste("Summary statistics for predicted", node, ":\n",
-              "Mean:", round(mean(predicted_values), 2), "\n",
-              "SD:", round(sd(predicted_values), 2))
+              "Mean:", round(mean(predicted_values_plot), 2), "\n",
+              "SD:", round(sd(predicted_values_plot), 2))
       })
     }
+
+    if (length(multi_nodes) > 0) {
+      utility_values <- matrix(NA, nrow=length(multi_nodes),ncol=2)
+      mycount<-0
+      for (n in multi_nodes) {
+        mycount<-mycount+1
+        if (n %in% names(workdf)) {
+          predicted_values <- predict(net_coef, node = n, data = test_set, method = "bayes-lw")
+          predicted_values<-as.numeric(predicted_values)
+
+          if (n == "co2_emissions"){
+            Ut=function(x){ 
+                ut=(max(x)-x)/(max(x)-min(x))
+            return(ut) }
+
+          } else{
+            Ut=function(x){
+              ut=(x-min(x))/(max(x)-min(x))
+            return(ut)}}
+          
+          exp_ut<-mean(Ut(predicted_values))
+          utility_values[mycount,2]<-as.numeric(exp_ut)
+          utility_values[mycount,1]<-n
+
+          ##for debug
+          #print(utility_values)
+          #print(is.numeric(utility_values))
+          #print(mycount)
+          #print(predicted_values)
+        }
+
+      }
+      expt_val_subut<-round(as.numeric(utility_values[,2]),2)
+      w<-1/length(multi_nodes)
+      #print(expt_val_subut)
+      expected_utility<- sum(w*expt_val_subut)
+
+      output$utility <- renderText({
+        paste("Expected Utility for selected nodes:", round(expected_utility, 2), "\n",
+              if (expected_utility > 0.6) {
+                "The supplier is considered good based on the utility score."
+              } else {
+                "The supplier is not considered good based on the utility score."
+              })
+      })
+
+   output$utilityPieChart <- renderPlot({
+        pie((w*expt_val_subut), 
+        labels = w*expt_val_subut, 
+        main = "Utility Values for Selected Nodes", 
+        col = rainbow(length(expt_val_subut)))
+        legend("topright",multi_nodes,
+        fill=rainbow(length((expt_val_subut)))
+        )
+      })
+      
+    }
+
+  
   })
 
        output$networkPlot <- renderPlot({
