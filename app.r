@@ -11,7 +11,7 @@ num_suppliers <- 300
 # Create a synthetic dataset
 supplier_data <- tibble(
   supplier_name = paste("Supplier", 1:num_suppliers),                # Supplier's name (e.g., Supplier 1, Supplier 2, ...)
-  electric_consumption = rnorm(num_suppliers, mean = 150, sd = 30),  # Electric consumption in kWh
+  electric_consumption = rnorm(num_suppliers, mean = 150, sd = 100),  # Electric consumption in kWh
   products_sold = sample(50:200, num_suppliers, replace = TRUE),     # Products sold to the company
   num_employees = sample(100:500, num_suppliers, replace = TRUE),    # Number of employees
   male_female_ratio = runif(num_suppliers, min = 0.5, max = 1.5),    # Ratio between male and female employees
@@ -58,7 +58,8 @@ workdf$income<-as.numeric(workdf$income)
 
 # white list
 
-wl<-data.frame(from = "supplier_name", to = c("income","num_employees","co2_emissions"))
+wl<-data.frame(from = c("supplier_name","supplier_name","supplier_name","supplier_name","supplier_name", "products_sold","electric_consumption", "num_transports", "delivery_time" ),
+               to = c("income","num_employees","co2_emissions","num_transports", "electric_consumption","income", "co2_emissions","delivery_time","cost_from_origin"))
 
 #  blacklist
 bl <- data.frame(from = c("income"), to = c("supplier_name"))
@@ -78,11 +79,11 @@ library(shiny)
 
 # Define the UI
 ui <- fluidPage(
-  titlePanel("Bayesian Network Visualization"),
+  titlePanel("SISS Project"),
   sidebarLayout(
     sidebarPanel(
-        selectInput("node", "Select Node of Interest:", choices = names(workdf)),
-        selectInput("multi_nodes", "Select Nodes for Utility Calculation:", choices = names(workdf), multiple = TRUE),
+        selectInput("node", "Select Attributes of Interest:", choices = names(workdf)),
+        selectInput("multi_nodes", "Select Attributes for Utility Calculation:", choices = names(workdf), multiple = TRUE),
         fileInput("file1", "Upload CSV File for Test Data", accept = ".csv"),
         actionButton("predict_btn", "Show Predictions")
     ),
@@ -107,12 +108,14 @@ server <- function(input, output) {
     data<-read.csv(input$file1$datapath)
 
     # Transform all integer columns to numeric
-    data <- data %>% mutate(across(where(is.integer), as.numeric))
-    data <- data %>% mutate(across(where(is.character), as.factor))
-    
+
+     data <- data %>% mutate(across(where(is.integer), as.numeric))
+     data <- data %>% mutate(across(where(is.character), as.factor))
+     data$electric_consumption<-as.numeric(data$electric_consumption)
+
 
     # Print the data types for debugging
-   # print(str(data))
+    print(str(data))
     
     return(data)
   })
@@ -127,18 +130,18 @@ server <- function(input, output) {
     } else {
       workdf[201:300, ]  # Default test set
     }
-    
+    print(str(test_set))
     # Perform prediction for the selected node
     if (node %in% names(workdf)) {
 
       predicted_values_plot <- predict(net_coef, node = node, data = test_set, method = "bayes-lw")
       
       output$densityPlot <- renderPlot({
-        plot(density(predicted_values_plot), main = paste("Density Plot for Predicted", node), col = "blue", lwd = 2)
+        plot(density(predicted_values_plot), main = paste("Prediction of ", node), col = "blue", lwd = 2)
         abline(v = mean(predicted_values_plot), col = 'blue', lwd = 2, lty = 2)
         #lines(density(test_set[[node]]), col = 'red', lwd = 2)
         #abline(v = mean(test_set[[node]]), col = 'red', lwd = 2, lty = 2)
-        legend("topright", legend = c("Predicted", "Training"), col = c("blue", "red"), lty = 1, lwd = 2)
+        legend("topright", legend = c("Predicted"), col = c("blue"), lty = 1, lwd = 2)
       })
        
 
@@ -181,36 +184,78 @@ server <- function(input, output) {
 
       }
       expt_val_subut<-round(as.numeric(utility_values[,2]),2)
-      w<-1/length(multi_nodes)
-      #print(expt_val_subut)
+       print(rep(1, length(multi_nodes)) )
+       w<-rep(1, length(multi_nodes)) / length(multi_nodes)
+
+       #print(w)
+
+       w <- w / sum(w)
+
+      #print(length(multi_nodes))
+      #print(multi_nodes)
+      #print(sum(w))
+
       expected_utility<- sum(w*expt_val_subut)
 
       output$utility <- renderText({
         paste("Expected Utility for selected nodes:", round(expected_utility, 2), "\n",
-              if (expected_utility > 0.6) {
+              if (expected_utility > 0.5) {
                 "The supplier is considered good based on the utility score."
               } else {
                 "The supplier is not considered good based on the utility score."
               })
       })
 
-   output$utilityPieChart <- renderPlot({
-        pie((w*expt_val_subut), 
-        labels = w*expt_val_subut, 
-        main = "Utility Values for Selected Nodes", 
-        col = rainbow(length(expt_val_subut)))
-        legend("topright",multi_nodes,
-        fill=rainbow(length((expt_val_subut)))
-        )
-      })
-      
-    }
+   output$utilityPieChart <- renderPlot({    
+    
+    total_utility <- sum(w * expt_val_subut)
+    par(mfrow = c(1, 2))  # 1 row, 2 columns
+  
+   pie((w*expt_val_subut),        
+    labels = round(w*expt_val_subut, 2),
+        main = "Utility Values for Selected Attributes", 
+      col = rainbow(length(expt_val_subut)))
+       legend("topright",multi_nodes,
+      fill=rainbow(length((expt_val_subut)))
+       )
+ 
+  
+   barplot(
+    total_utility, 
+    names.arg = "Total utility", 
+    col = "blue" ,
+    main = "Utility Values for Selected Attributes", 
+    ylim = c(0, 1),           # Set y-axis limit from 0 to 1 for better visualization
+    ylab = "Utility",
+    width = 0.2             # Set the bar width
+    ,xlim = c(-1 , 1.5)       # Narrow x-axis to avoid too much space
+    #, axes = FALSE               # Suppress x-axis to prevent unnecessary long ax
+  )
+  
+  # Add a red horizontal line at 0.5 to represent the threshold
+  abline(h = 0.5, col = "red", lwd = 2, lty = 2)  
+  
+  text(
+    x = 0.15,                    # The x-position for the text (aligned with the bar)
+    y = total_utility,         # The y-position (on top of the bar)
+    labels = round(total_utility, 2),  # Show the rounded total utility
+    pos = 3,                  # Position above the bar
+    cex = 1.8,                # Font size
+    col = "#1e00ff"           # Text color
+  )
+  
+  # Add a legend explaining the red line
+  legend("topright", legend = "Threshold (0.5)", col = "red", lty = 2, lwd = 2)
+})
+   }
+
+
 
   
   })
 
        output$networkPlot <- renderPlot({
-    graphviz.plot(net, main = "Bayesian Network Structure")  # Plot the network using graphviz.plot
+    graphviz.plot(net, main = "Relational Model")  # Plot the network using graphviz.plot
   })
 }
 
