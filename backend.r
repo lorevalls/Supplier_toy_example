@@ -1,55 +1,57 @@
-
-# Load necessary library
 library(tidyverse)
-
+library(fmsb)
 # Set seed for reproducibility
 set.seed(42)
 
-# Number of suppliers
-num_suppliers <- 300
+# Number of years for one supplier
+num_years <- 5
 
-# Create a synthetic dataset
+# Create a synthetic dataset for one supplier over five years
 supplier_data <- tibble(
-  supplier_name = paste("Supplier", 1:num_suppliers),                # Supplier's name (e.g., Supplier 1, Supplier 2, ...)
-  electric_consumption = rnorm(num_suppliers, mean = 150, sd = 100),  # Electric consumption in kWh
-  products_sold = sample(50:200, num_suppliers, replace = TRUE),     # Products sold to the company
-  num_employees = sample(100:500, num_suppliers, replace = TRUE),    # Number of employees
-  male_female_ratio = runif(num_suppliers, min = 0.5, max = 1.5),    # Ratio between male and female employees
-  num_transports = sample(10:50, num_suppliers, replace = TRUE),     # Number of transports
-  delivery_time = rnorm(num_suppliers, mean = 5, sd = 2.5)           # Time for deliveries in days
+  year = c(2018:2022),                                         # Years
+ # supplier_name = rep("Supplier A", num_years),             # Single supplier name
+  electric_consumption = rnorm(num_years, mean = 150, sd = 15), # Electric consumption in kWh
+  products_sold = sample(50:200, num_years, replace = TRUE), # Products sold per year
+  num_employees = sample(100:200, num_years, replace = TRUE), # Number of employees
+  male_female_ratio = runif(num_years, min = 0.5, max = 1.5), # Ratio of male-to-female employees
+  num_transports = sample(10:30, num_years, replace = TRUE),  # Number of transports
+  delivery_time = rnorm(num_years, mean = 5, sd = 2),        # Delivery time in days
 )
 
 # Add CO2 emissions with correlation to electric consumption
 supplier_data <- supplier_data %>%
   mutate(
-    co2_emissions = electric_consumption * runif(num_suppliers, min = 1.2, max = 1.5) + rnorm(num_suppliers, mean = 0, sd = 10)
+    co2_emissions = electric_consumption * runif(num_years, min = 1.2, max = 1.5) + rnorm(num_years, mean = 0, sd = 5)
   )
 
-# Add costs of the product from the beginning to the destination with correlation to delivery time
+# Add costs of the product from origin to destination with correlation to delivery time
 supplier_data <- supplier_data %>%
   mutate(
-    cost_from_origin = delivery_time * runif(num_suppliers, min = 800, max = 1200) + rnorm(num_suppliers, mean = 0, sd = 100)
+    cost_from_origin = delivery_time * runif(num_years, min = 800, max = 1200) + rnorm(num_years, mean = 0, sd = 50)
   )
 
 # Introduce correlation between num_employees and male_female_ratio
 supplier_data <- supplier_data %>% 
   mutate(
-    male_female_ratio = 0.5 + (num_employees / 1000) + rnorm(num_suppliers, mean = 0, sd = 0.1)
+    male_female_ratio = 0.5 + (num_employees / 1000) + rnorm(num_years, mean = 0, sd = 0.1)
   ) 
 
-# Correct the income calculation with consistent usage of runif and rnorm
+# Add income calculation with consistent usage of runif and rnorm
 supplier_data <- supplier_data %>%
   mutate(
-    income = (products_sold * (runif(num_suppliers, min=10, max=5000) + rnorm(num_suppliers, 0, 100)))  
-              -(num_employees * (runif(num_suppliers, min=8, max=20) + rnorm(num_suppliers, 0, 10)))
+    income = (products_sold * (runif(num_years, min = 10, max = 5000) + rnorm(num_years, 0, 50)))  
+              -(num_employees * (runif(num_years, min = 8, max = 20) + rnorm(num_years, 0, 5)))
   )
+
+# View the dataset
+print(supplier_data)
 
 # View the first few rows of the dataset
 library(bnlearn)
 library(ggplot2)
 
 workdf<-data.frame(supplier_data)
-workdf$supplier_name<-as.factor(workdf$supplier_name)
+workdf$year<-as.factor(workdf$year)
 workdf$products_sold<-as.numeric(workdf$products_sold)
 workdf$num_employees<-as.numeric(workdf$num_employees)
 workdf$num_transports<-as.numeric(workdf$num_transports)
@@ -58,18 +60,18 @@ workdf$income<-as.numeric(workdf$income)
 
 # white list
 
-wl<-data.frame(from = c("supplier_name","supplier_name","supplier_name","supplier_name","supplier_name", "products_sold","electric_consumption", "num_transports", "delivery_time" ),
-               to = c("income","num_employees","co2_emissions","num_transports", "electric_consumption","income", "co2_emissions","delivery_time","cost_from_origin"))
+#wl<-data.frame(from = c("year", "products_sold","electric_consumption", "num_transports", "delivery_time" ),
+#               to = c("income","num_employees","co2_emissions","num_transports", "electric_consumption","income", "co2_emissions","delivery_time","cost_from_origin"))
 
 #  blacklist
-bl <- data.frame(from = c("income"), to = c("supplier_name"))
+#bl <- data.frame(from = c("income"), to = c("supplier_name"))
 
 # structure learning
 trainig_set<-workdf[1:200,]
 #test_set<-workdf[201:300,]
 net<-hc(workdf, score = 'bic-cg'
-    , whitelist = wl
-    ,blacklist = bl
+    #, whitelist = wl
+   # ,blacklist = bl
 )
 
 # parameter leanrig
@@ -79,7 +81,7 @@ library(shiny)
 
 # Define the UI
 ui <- fluidPage(
-  titlePanel("SISS Project"),
+  titlePanel("Monitoring Performances"),
   sidebarLayout(
     sidebarPanel(
         selectInput("node", "Select Attributes of Interest:", choices = names(workdf)),
@@ -88,7 +90,7 @@ ui <- fluidPage(
         actionButton("predict_btn", "Show Predictions")
     ),
     mainPanel(
-        plotOutput("networkPlot"),
+       # plotOutput("networkPlot"),
         plotOutput("densityPlot"),
         plotOutput("utilityPieChart"),
         textOutput("utility"),
@@ -137,21 +139,34 @@ server <- function(input, output) {
       predicted_values_plot <- predict(net_coef, node = node, data = test_set, method = "bayes-lw")
       
       output$densityPlot <- renderPlot({
-        plot(density(predicted_values_plot), main = paste("Prediction of ", node), col = "blue", lwd = 2)
-        abline(v = mean(predicted_values_plot), col = 'blue', lwd = 2, lty = 2)
-        #lines(density(test_set[[node]]), col = 'red', lwd = 2)
-        #abline(v = mean(test_set[[node]]), col = 'red', lwd = 2, lty = 2)
-        legend("topright", legend = c("Predicted"), col = c("blue"), lty = 1, lwd = 2)
-      })
-       
-
-      output$summary <- renderText({
-        paste("Summary statistics for predicted", node, ":\n",
-              "Mean:", round(mean(predicted_values_plot), 2), "\n",
-              "SD:", round(sd(predicted_values_plot), 2))
-      })
-    }
-
+         prediction_df <- tibble(
+        Index = 1:length(predicted_values_plot),
+        Predicted = predicted_values_plot
+      )
+      
+      ggplot(prediction_df, aes(x = Index, y = Predicted)) +
+        geom_line(color = "blue", size = 1) +
+        geom_point(color = "blue", size = 2) +
+        labs(
+          title = paste("Historical data", node),
+          x = "Index",
+          y = "Predicted Values"
+        ) +
+        theme_minimal() +
+        geom_hline(yintercept = mean(predicted_values_plot), color = "red", linetype = "dashed") +
+        annotate(
+          "text", x = max(prediction_df$Index), y = mean(predicted_values_plot), 
+          label = paste("Mean:", round(mean(predicted_values_plot), 2)),
+          hjust = 1, vjust = -1, color = "red"
+        )
+    })
+    
+    output$summary <- renderText({
+      paste("Summary statistics for predicted", node, ":\n",
+            "Mean:", round(mean(predicted_values_plot), 2), "\n",
+            "SD:", round(sd(predicted_values_plot), 2))
+    })
+  }
     if (length(multi_nodes) > 0) {
       utility_values <- matrix(NA, nrow=length(multi_nodes),ncol=2)
       mycount<-0
@@ -209,18 +224,34 @@ server <- function(input, output) {
    output$utilityPieChart <- renderPlot({    
     
     total_utility <- sum(w * expt_val_subut)
-    par(mfrow = c(1, 3))  # 1 row, 2 columns
-  
-   pie((w*expt_val_subut),        
-    labels = round(w*expt_val_subut, 2),
-        main = "Utility Values for Selected Attributes", 
-      col = rainbow(length(expt_val_subut)))
 
+     radar_data <- as.data.frame(t(w * expt_val_subut))
+    colnames(radar_data) <- multi_nodes
     
-       legend('topright',multi_nodes,
-      fill=rainbow(length((expt_val_subut)))
-)
- 
+    # Add maximum and minimum rows to format the radar chart
+    radar_data <- rbind(rep(1, length(multi_nodes)), rep(0, length(multi_nodes)), radar_data)
+    
+    # Radar chart visualization
+    par(mfrow = c(1, 2))  # Side-by-side layout for radar chart and barplot
+   
+    # Plot the radar chart
+    library(fmsb)
+    radarchart(
+        radar_data,
+        axistype = 2,
+        title = "Utility Values for Selected Attributes",
+        pcol = "blue",
+        pfcol = rgb(0, 0, 1, alpha = 0.5), # Semi-transparent fill
+        plwd = 2,  # Line width
+        cglcol = "grey", # Gridline color
+        cglty = 1, # Gridline type
+        axislabcol = "black", # Axis label color
+        caxislabels = seq(0, 1, 0.2), # Axis label intervals
+        vlcex = 1.2 # Variable label size
+    )
+    
+    # Add legend for radar chart
+    legend("topright", legend = multi_nodes, fill = "blue", cex = 0.8)
   
    barplot(
     total_utility, 
@@ -251,14 +282,11 @@ server <- function(input, output) {
 })
    }
 
-
-
-  
   })
 
-       output$networkPlot <- renderPlot({
-    graphviz.plot(net, main = "Relational Model")  # Plot the network using graphviz.plot
-  })
+    #   output$networkPlot <- renderPlot({
+   # graphviz.plot(net, main = "Relational Model")  # Plot the network using graphviz.plot
+  #})
 }
 
 # Run the Shiny app
