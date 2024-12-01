@@ -4,43 +4,45 @@ library(fmsb)
 set.seed(42)
 
 # Number of years for one supplier
-num_years <- 5
+num_years <-600 
 
 # Create a synthetic dataset for one supplier over five years
 supplier_data <- tibble(
-  year = c(2018:2022),                                         # Years
+  year = c(rep(2018,100),rep(2019,100),rep(2020,100),rep(2021,100),rep(2022,100),rep(2023,100)),   # Years
  # supplier_name = rep("Supplier A", num_years),             # Single supplier name
-  electric_consumption = rnorm(num_years, mean = 150, sd = 15), # Electric consumption in kWh
-  products_sold = sample(50:200, num_years, replace = TRUE), # Products sold per year
-  num_employees = sample(100:200, num_years, replace = TRUE), # Number of employees
-  male_female_ratio = runif(num_years, min = 0.5, max = 1.5), # Ratio of male-to-female employees
-  num_transports = sample(10:30, num_years, replace = TRUE),  # Number of transports
-  delivery_time = rnorm(num_years, mean = 5, sd = 2),        # Delivery time in days
+  Energy_Consumption_kWh = rnorm(num_years, mean = 150, sd = 10), # Electric consumption in kWh
+  Water_Usage_L = round(runif(num_years, 500, 2000), 2),
+  Products_sold = sample(50:200, num_years, replace = TRUE), # Products sold per year
+  Num_employees = sample(100:200, num_years, replace = TRUE), # Number of employees
+  Employee_Turnover_rate = round(runif(num_years, 5, 20), 2),
+  Workforce_Diversity_rate = runif(num_years, min = 0.5, max = 1.5), # Ratio of male-to-female employees
+  Num_transports = sample(10:30, num_years, replace = TRUE),  # Number of transports
+  Delivery_time = rnorm(num_years, mean = 5, sd = 2)        # Delivery time in days
 )
 
 # Add CO2 emissions with correlation to electric consumption
 supplier_data <- supplier_data %>%
   mutate(
-    co2_emissions = electric_consumption * runif(num_years, min = 1.2, max = 1.5) + rnorm(num_years, mean = 0, sd = 5)
+    Carbon_Emissions_m3 = Energy_Consumption_kWh * runif(num_years, min = 1.2, max = 1.5) + rnorm(num_years, mean = 0, sd = 3)
   )
 
 # Add costs of the product from origin to destination with correlation to delivery time
 supplier_data <- supplier_data %>%
   mutate(
-    cost_from_origin = delivery_time * runif(num_years, min = 800, max = 1200) + rnorm(num_years, mean = 0, sd = 50)
+    Cost_from_origin = Delivery_time * runif(num_years, min = 800, max = 1200) + rnorm(num_years, mean = 0, sd = 50)
   )
 
-# Introduce correlation between num_employees and male_female_ratio
+# Introduce correlation between num_employees and Workforce_Diversity_rate
 supplier_data <- supplier_data %>% 
   mutate(
-    male_female_ratio = 0.5 + (num_employees / 1000) + rnorm(num_years, mean = 0, sd = 0.1)
+    Workforce_Diversity_rate = 0.5 + (Num_employees / 1000) + rnorm(num_years, mean = 0, sd = 0.1)
   ) 
 
 # Add income calculation with consistent usage of runif and rnorm
 supplier_data <- supplier_data %>%
   mutate(
-    income = (products_sold * (runif(num_years, min = 10, max = 5000) + rnorm(num_years, 0, 50)))  
-              -(num_employees * (runif(num_years, min = 8, max = 20) + rnorm(num_years, 0, 5)))
+    Income = (Products_sold * (runif(num_years, min = 10, max = 5000) + rnorm(num_years, 0, 50)))  
+              -(Num_employees * (runif(num_years, min = 8, max = 20) + rnorm(num_years, 0, 5)))
   )
 
 # View the dataset
@@ -52,10 +54,10 @@ library(ggplot2)
 
 workdf<-data.frame(supplier_data)
 workdf$year<-as.factor(workdf$year)
-workdf$products_sold<-as.numeric(workdf$products_sold)
-workdf$num_employees<-as.numeric(workdf$num_employees)
-workdf$num_transports<-as.numeric(workdf$num_transports)
-workdf$income<-as.numeric(workdf$income)
+workdf$Products_sold<-as.numeric(workdf$Products_sold)
+workdf$Num_employees<-as.numeric(workdf$Num_employees)
+workdf$Num_transports<-as.numeric(workdf$Num_transports)
+workdf$Income<-as.numeric(workdf$Income)
 
 
 # white list
@@ -67,7 +69,7 @@ workdf$income<-as.numeric(workdf$income)
 #bl <- data.frame(from = c("income"), to = c("supplier_name"))
 
 # structure learning
-trainig_set<-workdf[1:200,]
+trainig_set<-workdf[1:500,]
 #test_set<-workdf[201:300,]
 net<-hc(workdf, score = 'bic-cg'
     #, whitelist = wl
@@ -105,6 +107,16 @@ server <- function(input, output) {
 
     print("Server started")
 
+
+    output$weight_inputs <- renderUI({
+    lapply(input$multi_nodes, function(multi_nodes) {
+
+        sliderInput(paste0("weight_", multi_nodes), paste0("Weight for ", multi_nodes), 
+                    min = 0, max = 1, value = 0.1)
+
+    })
+  })
+
     test_data <- reactive({
     req(input$file1)  # Ensure a file is uploaded
     data<-read.csv(input$file1$datapath)
@@ -130,7 +142,9 @@ server <- function(input, output) {
     test_set <- if (!is.null(input$file1)) {
       test_data()
     } else {
-      workdf[201:300, ]  # Default test set
+      ###workdf[501:600, ]  # Default test set
+      workdf
+      
     }
     print(str(test_set))
     # Perform prediction for the selected node
@@ -141,24 +155,30 @@ server <- function(input, output) {
       output$densityPlot <- renderPlot({
          prediction_df <- tibble(
         Index = 1:length(predicted_values_plot),
-        Predicted = predicted_values_plot
+        Predicted = predicted_values_plot,
+        Year= as.character(c(rep(2018,100),rep(2019,100),rep(2020,100),rep(2021,100),rep(2022,100),rep(2023,100)))
       )
       
-      ggplot(prediction_df, aes(x = Index, y = Predicted)) +
-        geom_line(color = "blue", size = 1) +
-        geom_point(color = "blue", size = 2) +
+    ggplot(prediction_df, aes(x = Index, y = Predicted, colour = Year, group=Year)) +
+        ##geom_point(size = 3, alpha = 0.8) +  # Use points instead of lines
+        geom_line( size = 1) +
+        geom_point(size = 2) +
+        geom_smooth(method = "lm", se =TRUE, color='black') +
+        scale_color_manual(values = c("2018" = "red", "2019" = "blue", "2020" = "green", 
+                                       "2021" = "purple", "2022" = "orange", "2023" = "pink")) +  # Set custom colors
         labs(
-          title = paste("Historical data", node),
-          x = "Index",
-          y = "Predicted Values"
+            title = paste("Predicted Values for", node),
+            x = "Index",
+            y = "Predicted Values",
+            color = "Year"  # Label for the color legend
         ) +
         theme_minimal() +
-        geom_hline(yintercept = mean(predicted_values_plot), color = "red", linetype = "dashed") +
-        annotate(
-          "text", x = max(prediction_df$Index), y = mean(predicted_values_plot), 
-          label = paste("Mean:", round(mean(predicted_values_plot), 2)),
-          hjust = 1, vjust = -1, color = "red"
+        theme(
+            plot.title = element_text(size = 20, face = "bold"),  # Customize title size
+            axis.text = element_text(size = 12),                 # Customize axis label size
+            legend.text = element_text(size = 12)                # Customize legend text size
         )
+
     })
     
     output$summary <- renderText({
@@ -170,13 +190,18 @@ server <- function(input, output) {
     if (length(multi_nodes) > 0) {
       utility_values <- matrix(NA, nrow=length(multi_nodes),ncol=2)
       mycount<-0
+
+      weight_input <- input[[paste0("weight_", node)]]
+          weights <- c(weights, ifelse(is.null(weight_input), 1, weight_input)) 
+
+          
       for (n in multi_nodes) {
         mycount<-mycount+1
         if (n %in% names(workdf)) {
           predicted_values <- predict(net_coef, node = n, data = test_set, method = "bayes-lw")
           predicted_values<-as.numeric(predicted_values)
 
-          if (n == "co2_emissions"){
+          if (n == "Carbon_Emissions_m3"){
             Ut=function(x){ 
                 ut=(max(x)-x)/(max(x)-min(x))
             return(ut) }
@@ -200,17 +225,17 @@ server <- function(input, output) {
       }
       expt_val_subut<-round(as.numeric(utility_values[,2]),2)
        print(rep(1, length(multi_nodes)) )
-       w<-rep(1, length(multi_nodes)) / length(multi_nodes)
+       weights<-rep(1, length(multi_nodes)) / length(multi_nodes)
 
        #print(w)
 
-       w <- w / sum(w)
+       weightsw <- weights / sum(weights)
 
       #print(length(multi_nodes))
       #print(multi_nodes)
       #print(sum(w))
 
-      expected_utility<- sum(w*expt_val_subut)
+      expected_utility<- sum(weights*expt_val_subut)
 
       output$utility <- renderText({
         paste("Expected Utility for selected nodes:", round(expected_utility, 2), "\n",
@@ -223,14 +248,15 @@ server <- function(input, output) {
 
    output$utilityPieChart <- renderPlot({    
     
-    total_utility <- sum(w * expt_val_subut)
+    total_utility <- sum(weights * expt_val_subut)
 
-     radar_data <- as.data.frame(t(w * expt_val_subut))
+     radar_data <- as.data.frame(t(weights * expt_val_subut))
     colnames(radar_data) <- multi_nodes
     
     # Add maximum and minimum rows to format the radar chart
     radar_data <- rbind(rep(1, length(multi_nodes)), rep(0, length(multi_nodes)), radar_data)
     
+    print(radar_data)
     # Radar chart visualization
     par(mfrow = c(1, 2))  # Side-by-side layout for radar chart and barplot
    
